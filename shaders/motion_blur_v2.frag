@@ -36,14 +36,14 @@ void main() {
     offset[7] = vec2( 0,  1);
     offset[8] = vec2( 1,  1);
 
-    // 低通濾波：將小範圍模糊合併在 u_tex0 上
+    // --- 步驟1：高斯模糊 ---
     vec2 texel = 1.0 / u_resolution; // 計算每個像素的 texel 大小
     vec3 blurSmall = vec3(0.0);
     for (int i = 0; i < 9; i++) {
-        vec2 sampleUV = uv + offset[i] * texel;
+        vec2 sampleUV = clamp(uv + offset[i] * texel, 0.0, 1.0); // clamp 保證座標合法
         blurSmall += texture2D(u_tex0, sampleUV).rgb * kernelSmall[i]; // 取樣 u_tex0
     }
-    vec3 lowpass = blurSmall;
+    vec3 gaussColor = blurSmall;
 
  
 
@@ -53,15 +53,25 @@ void main() {
     }
     //else if (mod(u_time, 4.0)<=1.0) gl_FragColor = texture2D(u_buffer0, st);
     else {
-        // --- 以下為可調整強度的靜態躁點效果 ---
+        // --- 步驟2：加入雜訊 ---
         float noiseScale = 70.0; // 控制躁點顆粒尺寸（值越大顆粒越細緻）
         float noiseStrength = 0.45; // 控制躁點強度（0~1，可自行調整）
-
-        // 產生靜態躁點（只用座標，不用時間參數，躁點不閃爍）
         float noise = fract(sin(dot(uv * noiseScale, vec2(12.9898,78.233))) * 43758.5453);
-        // 將躁點疊加在低通濾波結果上
-        vec3 finalColor = lowpass + noise * noiseStrength;
-        // 輸出低通濾波+躁點後的顏色
-        gl_FragColor = vec4(finalColor, 1.0);
+        vec3 noisyColor = gaussColor + noise * noiseStrength;
+
+        // --- 步驟3：垂直方向動態模糊（以雜訊結果為基底）---
+        int nSamples = 8; // 取樣數量，可調整
+        float blurStrength = 0.02 + 0.05 * abs(sin(u_time)); // 控制模糊長度，隨時間動態變化
+        vec2 blurVec = vec2(0.0, blurStrength); // 垂直方向模糊
+        vec3 blurColor = vec3(0.0);
+        for (int i = 0; i < nSamples; ++i) {
+            float t = float(i) / float(nSamples - 1) - 0.5;
+            vec2 offset = blurVec * t;
+            vec2 sampleUV = clamp(uv + offset, 0.0, 1.0);
+            blurColor += texture2D(u_tex0, sampleUV).rgb * 0.7 + noisyColor * 0.3; // 混合雜訊與原圖
+        }
+        blurColor /= float(nSamples);
+        // 輸出最終動態模糊結果
+        gl_FragColor = vec4(blurColor, 1.0);
     }
 }
