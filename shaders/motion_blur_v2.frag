@@ -1,5 +1,5 @@
-// Author:CMH
-// Title:input image and kernel 
+// Author:tsuyi
+// Title:input image, kernel and vertical motion blur
 
 #ifdef GL_ES
 precision mediump float;
@@ -10,6 +10,15 @@ uniform vec2 u_mouse;
 uniform float u_time;
 uniform sampler2D u_tex0;
 uniform sampler2D u_tex1;
+
+// 產生像素化效果
+vec2 pixelization(vec2 uv, float size) //from 1 to 10
+{
+    vec2 uvs=uv/ size;//縮小uv座標[0~6]
+    vec2 ipos = floor(uvs);// 取整數
+    vec2 nuv=ipos*size;//放大uv座標回原尺寸
+    return nuv;
+}
 
 void main() {
     vec2 uv = gl_FragCoord.xy / u_resolution.xy;
@@ -42,24 +51,17 @@ void main() {
     vec3 noisy = blurred + vec3(noise * 0.15);
     
     // === 步驟3: 垂直動態模糊 ===
-    vec3 motionBlur = vec3(0.0);
-    float blurStrength = 0.5;
-    int samples = 8;
-    
-    // 展開迴圈以避免某些驅動問題
-    motionBlur += texture2D(u_tex0, uv + vec2(0.0, blurStrength * -0.5)).rgb;
-    motionBlur += texture2D(u_tex0, uv + vec2(0.0, blurStrength * -0.357)).rgb;
-    motionBlur += texture2D(u_tex0, uv + vec2(0.0, blurStrength * -0.214)).rgb;
-    motionBlur += texture2D(u_tex0, uv + vec2(0.0, blurStrength * -0.071)).rgb;
-    motionBlur += texture2D(u_tex0, uv + vec2(0.0, blurStrength * 0.071)).rgb;
-    motionBlur += texture2D(u_tex0, uv + vec2(0.0, blurStrength * 0.214)).rgb;
-    motionBlur += texture2D(u_tex0, uv + vec2(0.0, blurStrength * 0.357)).rgb;
-    motionBlur += texture2D(u_tex0, uv + vec2(0.0, blurStrength * 0.5)).rgb;
-    
-    motionBlur /= 8.0;
-    
-    // 將motion blur應用到已處理的顏色上
-    vec3 final = mix(noisy, motionBlur, 0.5);
-    
+    // --- Low pass: combine small and large blur on u_tex0 ---
+    vec3 blurSmall = vec3(0.0);
+    float blurStrength = 1.0 + u_time * 0.5; // 可調整係數
+    for (int i = 0; i < 9; i++) {
+        vec2 sampleUV = uv + offset[i] * texel * blurStrength;
+        blurSmall += texture2D(u_tex0, sampleUV).rgb * kernelSmall[i];
+    }
+    vec3 lowpass = blurSmall;
+
+    // 混合 noisy 和 lowpass
+    vec3 final = mix(noisy, lowpass, 0.5);
     gl_FragColor = vec4(final, 1.0);
+    
 }
