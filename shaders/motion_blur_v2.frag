@@ -53,6 +53,29 @@ void main() {
     }
     //else if (mod(u_time, 4.0)<=1.0) gl_FragColor = texture2D(u_buffer0, st);
     else {
-        gl_FragColor = vec4(lowpass, 1.0); // 顯示低通濾波後的結果
+        // --- 以下為可調整強度的靜態躁點效果 ---
+        float noiseScale = 70.0; // 控制躁點顆粒尺寸（值越大顆粒越細緻）
+        float noiseStrength = 0.45; // 控制躁點強度（0~1，可自行調整）
+
+        // 產生靜態躁點（只用座標，不用時間參數，躁點不閃爍）
+        float noise = fract(sin(dot(uv * noiseScale, vec2(12.9898,78.233))) * 43758.5453);
+        // 將躁點疊加在低通濾波結果上
+        vec3 noisyColor = lowpass + noise * noiseStrength;
+
+        // --- 線性方向 motion blur 疊加---
+        int nSamples = 8; // 取樣數量，可調整
+            float blurStrength = 0.01; // 控制模糊長度，建議值小一點
+        vec2 blurVec = vec2(0.0, blurStrength); // 垂直方向模糊
+        vec3 blurColor = vec3(0.0);
+        for (int i = 0; i < nSamples; ++i) {
+            float t = float(i) / float(nSamples - 1) - 0.5;
+            vec2 offset = blurVec * t;
+                vec2 sampleUV = clamp(uv + offset, 0.0, 1.0); // clamp 保證座標合法
+                // 取樣雜訊疊加後的顏色
+                blurColor += noisyColor;
+        }
+        blurColor /= float(nSamples);
+        // 輸出 motion blur 疊加後的顏色
+        gl_FragColor = vec4(blurColor, 1.0);
     }
 }
